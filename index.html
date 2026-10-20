@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#020617" />
+<title>Kitti — Score &amp; Pot Calculator</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+<style type="text/tailwindcss">
+  @layer base {
+    html { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+    body { -webkit-tap-highlight-color: transparent; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 99px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+  }
+  @layer components {
+    .card {
+      @apply rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-xl sm:p-5;
+    }
+    .card-title {
+      @apply mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400;
+    }
+    .btn {
+      @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5
+             text-sm font-semibold transition;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { @apply cursor-not-allowed opacity-40; }
+    .btn:disabled:active { transform: none; }
+    .btn-emerald { @apply bg-emerald-500 text-slate-950 shadow-lg hover:bg-emerald-400; }
+    .btn-ghost {
+      @apply border border-slate-700 bg-slate-800/60 text-slate-300
+             hover:border-slate-600 hover:bg-slate-800;
+    }
+    .field {
+      @apply w-full rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2.5
+             text-sm text-slate-100 placeholder-slate-500 outline-none transition;
+    }
+    .field:focus { @apply border-emerald-500 ring-2 ring-emerald-500/30; }
+    .field-sm {
+      @apply w-full rounded-lg border border-slate-700 bg-slate-800/60 px-2.5 py-1.5
+             text-sm text-slate-100 placeholder-slate-500 outline-none transition;
+    }
+    .field-sm:focus { @apply border-emerald-500 ring-2 ring-emerald-500/30; }
+  }
+
+  @keyframes popIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .pop-in { animation: popIn .28s ease-out both; }
+
+  @keyframes kittiPing {
+    0%   { box-shadow: 0 0 0 0 rgba(245,158,11,0.45); }
+    70%  { box-shadow: 0 0 0 10px rgba(245,158,11,0); }
+    100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
+  }
+  .kitti-ping { animation: kittiPing .55s ease-out; }
+</style>
+</head>
+
+<body class="min-h-screen bg-slate-950 text-slate-100 antialiased selection:bg-emerald-500/30">
+
+<!-- ambient glow -->
+<div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+  <div class="absolute -top-40 left-1/2 h-96 w-[42rem] -translate-x-1/2 rounded-full bg-emerald-600/10 blur-3xl"></div>
+  <div class="absolute -bottom-24 right-0 h-72 w-72 rounded-full bg-teal-600/5 blur-3xl"></div>
+</div>
+
+<!-- ================= HEADER ================= -->
+<header class="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur">
+  <div class="mx-auto flex w-full max-w-6xl items-center justify-between gap-2 px-3 py-2.5 sm:px-4 sm:py-3">
+    <div class="flex min-w-0 items-center gap-2.5">
+      <div class="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-base sm:h-10 sm:w-10 sm:text-lg">🃏</div>
+      <div class="min-w-0">
+        <h1 class="truncate text-sm font-extrabold tracking-tight sm:text-lg">
+          Kitti <span class="text-emerald-400">Score</span> &amp; Pot
+        </h1>
+        <p class="hidden text-[11px] text-slate-500 sm:block">Rounds · Wins · Rolling pot</p>
+      </div>
+    </div>
+
+    <div class="flex shrink-0 items-center gap-1.5">
+      <button id="undoBtn" type="button" title="Undo last action (Ctrl+Z)"
+              class="btn btn-ghost px-2.5 py-2 text-xs" disabled>
+        <span aria-hidden="true">↶</span><span class="hidden sm:inline">Undo</span>
+      </button>
+      <button id="shareBtn" type="button" title="Share summary"
+              class="btn btn-ghost px-2.5 py-2 text-xs">
+        <span aria-hidden="true">↗</span><span class="hidden sm:inline">Share</span>
+      </button>
+      <button id="resetBtn" type="button" title="Reset game"
+              class="btn btn-ghost px-2.5 py-2 text-xs hover:border-rose-500/50 hover:text-rose-400">
+        <span aria-hidden="true">↺</span><span class="hidden sm:inline">Reset</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ================= MAIN ================= -->
+<main class="mx-auto w-full max-w-6xl space-y-4 px-3 py-4 sm:px-4 sm:py-6">
+
+  <!-- ---------- POT ---------- -->
+  <section class="card relative overflow-hidden">
+    <div class="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-emerald-500/10 blur-2xl"></div>
+
+    <div class="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div class="min-w-0">
+        <p class="text-[11px] font-bold uppercase tracking-widest text-slate-400">Pot at Stake</p>
+        <p id="potValue" class="mt-0.5 text-5xl font-extrabold tabular-nums text-emerald-400 sm:text-6xl">₹0</p>
+        <p id="potSub" class="mt-1.5 text-xs text-slate-500">—</p>
+      </div>
+
+      <div class="flex shrink-0 items-stretch gap-2">
+        <div class="rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2 text-center">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Round</p>
+          <p id="roundValue" class="text-xl font-bold tabular-nums text-slate-200 sm:text-2xl">0</p>
+        </div>
+        <div class="rounded-xl border border-slate-800 bg-slate-950/60 px-3.5 py-2 text-center">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Ante</p>
+          <p id="anteValue" class="text-xl font-bold tabular-nums text-slate-200 sm:text-2xl">₹50</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- sparkline (pot won per round) -->
+    <div class="relative mt-3">
+      <svg id="sparkline" viewBox="0 0 300 56" preserveAspectRatio="none"
+           class="h-12 w-full sm:h-14" aria-hidden="true"></svg>
+      <p class="mt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-600">Pot won per round</p>
+    </div>
+  </section>
+
+  <!-- ---------- GRID ---------- -->
+  <div class="grid gap-4 lg:grid-cols-12">
+
+    <!-- ======= LEFT ======= -->
+    <div class="space-y-4 lg:col-span-4">
+
+      <!-- Players -->
+      <section class="card">
+        <h2 class="card-title">
+          <span aria-hidden="true">👥</span> Players
+          <span id="playerCount"
+                class="ml-auto rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-bold tracking-normal text-slate-400">2/5</span>
+        </h2>
+
+        <div id="playerList" class="space-y-2"></div>
+
+        <button id="addPlayerBtn" type="button"
+                class="btn btn-ghost mt-3 w-full border-dashed text-xs">
+          + Add Player
+        </button>
+        <p class="mt-2 text-[11px] leading-relaxed text-slate-500">
+          Min 2 · max 5. Removing an active player who has staked or won
+          <em>cashes them out</em> — their balance stays in the settlement.
+        </p>
+      </section>
+
+      <!-- Ante -->
+      <section class="card">
+        <h2 class="card-title"><span aria-hidden="true">💰</span> Base Stake / Ante</h2>
+
+        <label for="anteInput" class="mb-1.5 block text-xs font-semibold text-slate-400">
+          Amount each player puts in per round
+        </label>
+        <div class="relative">
+          <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-emerald-500">₹</span>
+          <input id="anteInput" type="number" min="0" step="1" inputmode="numeric" value="50"
+                 class="field pl-8 text-base font-bold tabular-nums" />
+        </div>
+        <p class="mt-2 text-[11px] leading-relaxed text-slate-500">
+          Multiplied by the round multiplier, then collected from every active player when you resolve.
+        </p>
+      </section>
+
+      <!-- Stats -->
+      <section class="card">
+        <h2 class="card-title"><span aria-hidden="true">📊</span> Stats</h2>
+        <div id="statsGrid" class="grid grid-cols-2 gap-2"></div>
+      </section>
+    </div>
+
+    <!-- ======= RIGHT ======= -->
+    <div class="space-y-4 lg:col-span-8">
+
+      <!-- Resolve round -->
+      <section class="card">
+        <h2 class="card-title"><span aria-hidden="true">🎯</span> Resolve Round</h2>
+        <p class="-mt-1 mb-3 text-xs text-slate-500">
+          Mark Kitti whenever players declare it — each mark adds one more ante from every player.
+          Then pick the winner.
+        </p>
+
+        <!-- multiplier -->
+        <div class="mb-3 flex flex-wrap items-center gap-2">
+          <span class="text-[11px] font-bold uppercase tracking-widest text-slate-500">Multiplier</span>
+          <div id="multGroup" class="flex gap-1 rounded-xl border border-slate-800 bg-slate-950/60 p-1"></div>
+          <span id="multHint" class="ml-auto text-[11px] font-semibold text-slate-500"></span>
+        </div>
+
+        <!-- winner selection -->
+        <div id="winnerOptions" class="grid grid-cols-2 gap-2 sm:grid-cols-3"></div>
+
+        <!-- Kitti section -->
+        <div class="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-bold uppercase tracking-widest text-amber-400">Kitti marks this round</span>
+            <span id="kittiCount" class="text-sm font-bold tabular-nums text-amber-300">0</span>
+          </div>
+          <p id="kittiAmount" class="mt-1 text-xs text-amber-200/70">No kitti marks yet</p>
+          <button id="markKittiBtn" type="button"
+                  class="mt-2.5 w-full rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2
+                         text-sm font-semibold text-amber-300 transition
+                         hover:border-amber-400/60 hover:bg-amber-500/20 active:scale-[.98]">
+            + Mark Kitti <span id="kittiBtnAmt" class="text-amber-200/70"></span>
+          </button>
+        </div>
+
+        <p id="roundPreview" class="mt-3 text-center text-xs text-slate-500"></p>
+
+        <button id="playRoundBtn" type="button" class="btn btn-emerald mt-3 w-full py-3 text-base">
+          Resolve Round
+        </button>
+        <p class="mt-2 hidden text-center text-[10px] text-slate-600 sm:block">
+          Shortcuts:
+          <kbd class="rounded bg-slate-800 px-1">1</kbd>–<kbd class="rounded bg-slate-800 px-1">5</kbd> winner ·
+          <kbd class="rounded bg-slate-800 px-1">K</kbd> Kitti ·
+          <kbd class="rounded bg-slate-800 px-1">Enter</kbd> resolve
+        </p>
+      </section>
+
+      <!-- Leaderboard -->
+      <section class="card">
+        <h2 class="card-title"><span aria-hidden="true">🏆</span> Leaderboard</h2>
+
+        <div class="-mx-1 overflow-x-auto px-1">
+          <table class="w-full border-collapse text-sm">
+            <thead>
+              <tr class="text-[10px] uppercase tracking-widest text-slate-500">
+                <th class="w-8 pb-2 text-center font-bold">#</th>
+                <th class="pb-2 pl-1 text-left font-bold">Player</th>
+                <th class="w-12 pb-2 text-center font-bold">Wins</th>
+                <th class="hidden w-20 pb-2 text-right font-bold sm:table-cell">Staked</th>
+                <th class="hidden w-20 pb-2 pl-3 text-right font-bold sm:table-cell">Won</th>
+                <th class="w-24 pb-2 pl-3 text-right font-bold">Balance</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboardBody"></tbody>
+          </table>
+        </div>
+
+        <p class="mt-3 text-[11px] text-slate-500">
+          Balance = money won − money staked (antes + kitti contributions paid).
+        </p>
+      </section>
+
+      <!-- Settlement -->
+      <section class="card">
+        <h2 class="card-title">
+          <span aria-hidden="true">🤝</span> Who Owes Whom
+        </h2>
+
+        <ul id="settleList" class="space-y-2"></ul>
+
+        <p class="mt-3 text-[11px] leading-relaxed text-slate-500">
+          Direct pairwise dues based on resolved rounds. If you owe Player A 40 and they owe you 10, you will see "You owe Player A 30".
+        </p>
+      </section>
+
+      <!-- History -->
+      <section class="card">
+        <h2 class="card-title">
+          <span aria-hidden="true">📜</span> Round History
+          <button id="csvBtn" type="button"
+                  class="ml-auto rounded-lg border border-slate-700 px-2 py-1 text-[10px] font-bold tracking-normal text-slate-400 transition hover:border-slate-600 hover:text-slate-200">
+            CSV ⬇
+          </button>
+        </h2>
+        <ul id="historyList" class="max-h-80 space-y-2 overflow-y-auto pr-1"></ul>
+      </section>
+    </div>
+  </div>
+
+  <footer class="pb-6 pt-2 text-center text-[11px] text-slate-600">
+    Kitti Score &amp; Pot Calculator — all data stays in your browser.
+  </footer>
+</main>
+
+<!-- toast -->
+<div id="toast" role="status" aria-live="polite"
+     class="pointer-events-none fixed bottom-5 left-1/2 z-[60] max-w-[92vw] -translate-x-1/2 rounded-xl
+            border border-slate-700 bg-slate-900 px-4 py-3 text-center text-sm font-semibold
+            text-slate-200 opacity-0 shadow-2xl transition-all duration-300"></div>
+
+<!-- confetti -->
+<canvas id="confetti" class="pointer-events-none fixed inset-0 z-50 h-full w-full"></canvas>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =========================================================
+     CONSTANTS + HELPERS
+     ========================================================= */
+  const CURRENCY    = '₹';
+  const MIN_PLAYERS = 2;
+  const MAX_PLAYERS = 5;
+  const LS_KEY      = 'kitti-score-v4';
+  const MAX_UNDO    = 30;
+
+  const $ = (id) => document.getElementById(id);
+
+  const esc = (s) =>
+    String(s ?? '').replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+
+  const round0 = (n) => Math.round(Number(n) || 0);
+
+  const fmt = (n) => {
+    const v = round0(n);
+    return (v < 0 ? '-' : '') + CURRENCY + Math.abs(v).toLocaleString('en-US');
+  };
+
+  const fmtSigned = (n) => {
+    const v = round0(n);
+    if (v > 0) return '+' + CURRENCY + v.toLocaleString('en-US');
+    if (v < 0) return '-' + CURRENCY + Math.abs(v).toLocaleString('en-US');
+    return CURRENCY + '0';
+  };
+
+  const clone = (o) =>
+    (typeof structuredClone === 'function')
+      ? structuredClone(o)
+      : JSON.parse(JSON.stringify(o));
+
+  /* =========================================================
+     STATE
+     ========================================================= */
+  let uid = 0;
+
+  function makePlayer(name) {
+    return { id: ++uid, name: name, upi: '', wins: 0, staked: 0, won: 0, left: false };
+  }
+
+  function freshState() {
+    uid = 0;
+    return {
+      ante: 50,
+      multiplier: 1,
+      pot: 0,            // accumulated Kitti contributions for the current round
+      kittiMarks: 0,     // number of Kitti marks this round
+      round: 0,          // resolved rounds so far
+      players: [makePlayer('Player 1'), makePlayer('Player 2')],
+      history: [],       // newest first
+      transactions: [],  // records of who owes whom
+      selection: null    // player id, or null
+    };
+  }
+
+  let state = freshState();
+  let undoStack = [];
+
+  const activePlayers = () => state.players.filter((p) => !p.left);
+  const playerName    = (p) => (p && p.name.trim()) || 'Unnamed';
+
+  /* =========================================================
+     PERSISTENCE
+     ========================================================= */
+  function save() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) { /* quota / private */ }
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      if (!s || !Array.isArray(s.players) || s.players.length === 0) return null;
+
+      const players = s.players.map((p) => ({
+        id:     Number(p.id) || ++uid,
+        name:   typeof p.name === 'string' ? p.name : 'Player',
+        upi:    typeof p.upi === 'string' ? p.upi : '',
+        wins:   Number(p.wins) || 0,
+        staked: Number(p.staked) || 0,
+        won:    Number(p.won) || 0,
+        left:   !!p.left
+      }));
+
+      uid = players.reduce((m, p) => Math.max(m, p.id), 0);
+
+      return {
+        ante:       Math.max(0, Math.floor(Number(s.ante) || 0)) || 50,
+        multiplier: [1, 2, 3].includes(Number(s.multiplier)) ? Number(s.multiplier) : 1,
+        pot:        Math.max(0, Number(s.pot) || 0),
+        kittiMarks: Math.max(0, Math.floor(Number(s.kittiMarks) || 0)),
+        round:      Math.max(0, Number(s.round) || 0),
+        players,
+        history:    Array.isArray(s.history) ? s.history : [],
+        transactions: Array.isArray(s.transactions) ? s.transactions : [],
+        selection:  typeof s.selection === 'number' ? s.selection : null
+      };
+    } catch (e) { return null; }
+  }
+
+  /* =========================================================
+     TOAST
+     ========================================================= */
+  let toastTimer = null;
+  function toast(msg, type) {
+    const el = $('toast');
+    const skins = {
+      success: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+      error:   'border-rose-500/40 bg-rose-500/15 text-rose-300',
+      info:    'border-amber-500/40 bg-amber-500/15 text-amber-300'
+    };
+    el.className =
+      'fixed bottom-5 left-1/2 z-[60] max-w-[92vw] -translate-x-1/2 rounded-xl border px-4 py-3 ' +
+      'text-center text-sm font-semibold shadow-2xl backdrop-blur-md transition-all duration-300 ' +
+      (skins[type] || skins.info);
+    el.textContent = msg;
+
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      el.classList.add('opacity-0', 'translate-y-4', 'pointer-events-none');
+    }, 2600);
+  }
+
+  /* =========================================================
+     UNDO
+     ========================================================= */
+  function pushUndo(label) {
+    undoStack.push({ label, snap: clone(state) });
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    syncUndoBtn();
+  }
+
+  function syncUndoBtn() {
+    const btn = $('undoBtn');
+    btn.disabled = undoStack.length === 0;
+    btn.title = undoStack.length
+      ? 'Undo: ' + undoStack[undoStack.length - 1].label
+      : 'Nothing to undo';
+  }
+
+  function doUndo() {
+    const entry = undoStack.pop();
+    if (!entry) return;
+    state = entry.snap;
+    syncUndoBtn();
+    $('anteInput').value = state.ante;
+    shownPot = null;
+    renderPlayers();
+    render();
+    toast('Undid: ' + entry.label, 'info');
+  }
+
+  /* =========================================================
+     POT TWEEN
+     ========================================================= */
+  let shownPot = null;
+  let potRaf   = null;
+
+  function animatePotValue(target) {
+    const el = $('potValue');
+    if (shownPot === null) {
+      shownPot = target;
+      el.textContent = fmt(target);
+      return;
+    }
+    if (Math.abs(shownPot - target) < 0.5) {
+      shownPot = target;
+      el.textContent = fmt(target);
+      return;
+    }
+    const from = shownPot;
+    const start = performance.now();
+    const dur = 500;
+    cancelAnimationFrame(potRaf);
+
+    const step = (t) => {
+      const k = Math.min(1, (t - start) / dur);
+      const e = 1 - Math.pow(1 - k, 3);
+      const v = from + (target - from) * e;
+      shownPot = v;
+      el.textContent = fmt(v);
+      if (k < 1) potRaf = requestAnimationFrame(step);
+      else { shownPot = target; el.textContent = fmt(target); }
+    };
+    potRaf = requestAnimationFrame(step);
+  }
+
+  /* =========================================================
+     CONFETTI
+     ========================================================= */
+  function confettiBurst() {
+    const canvas = $('confetti');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = canvas.clientWidth || window.innerWidth;
+    const H = canvas.clientHeight || window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const COLORS = ['#34d399', '#fbbf24', '#60a5fa', '#f472b6', '#a78bfa', '#f87171'];
+    const parts = [];
+    for (let i = 0; i < 90; i++) {
+      parts.push({
+        x: W * 0.5 + (Math.random() - 0.5) * 180,
+        y: H * 0.32 + (Math.random() - 0.5) * 60,
+        vx: (Math.random() - 0.5) * 11,
+        vy: Math.random() * -9 - 3,
+        w: 4 + Math.random() * 7,
+        h: 3 + Math.random() * 5,
+        rot: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 0.35,
+        color: COLORS[i % COLORS.length],
+        life: 1
+      });
+    }
+
+    let last = performance.now();
+    let raf = 0;
+    let alive = true;
+
+    const frame = (t) => {
+      const dt = Math.min(2.5, (t - last) / 16.667);
+      last = t;
+      ctx.clearRect(0, 0, W, H);
+      alive = false;
+
+      for (const p of parts) {
+        p.vy += 0.42 * dt;
+        p.vx *= 0.995;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.rot += p.vr * dt;
+        p.life -= 0.0075 * dt;
+        if (p.life > 0 && p.y < H + 40) {
+          alive = true;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, p.life);
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.rot);
+          ctx.fillStyle = p.color;
+          ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+          ctx.restore();
+        }
+      }
+      if (alive) raf = requestAnimationFrame(frame);
+      else ctx.clearRect(0, 0, W, H);
+    };
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(frame);
+  }
+
+  /* =========================================================
+     RENDER — PLAYERS
+     ========================================================= */
+  function renderPlayers() {
+    const list = $('playerList');
+    const act  = activePlayers().length;
+    const canRemove = act > MIN_PLAYERS;
+    let activeIdx = 0;
+
+    list.innerHTML = state.players.map((p) => {
+      if (p.left) {
+        return `
+          <div class="rounded-xl border border-slate-800 bg-slate-950/25 p-2.5 opacity-60">
+            <div class="flex items-center gap-2">
+              <span class="w-4 shrink-0 text-center text-xs font-bold text-slate-600">–</span>
+              <span class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-500">${esc(playerName(p))}</span>
+              <span class="shrink-0 rounded-full bg-slate-800 px-2 py-0.5 text-[9px] font-bold tracking-widest text-slate-500">LEFT</span>
+            </div>
+          </div>`;
+      }
+      activeIdx += 1;
+      return `
+        <div class="rounded-xl border border-slate-800 bg-slate-950/40 p-2.5">
+          <div class="flex items-center gap-2">
+            <span class="w-4 shrink-0 text-center text-xs font-bold text-slate-500">${activeIdx}</span>
+            <input data-name="${p.id}" type="text" value="${esc(p.name)}"
+                   maxlength="16" autocomplete="off" spellcheck="false" placeholder="Player name"
+                   aria-label="Name of player ${activeIdx}"
+                   class="field-sm min-w-0 flex-1 font-semibold" />
+            <button type="button" data-remove="${p.id}" title="Cash out / remove ${esc(playerName(p))}"
+                    class="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-slate-700
+                           text-slate-400 transition hover:border-rose-500/60 hover:text-rose-400
+                           disabled:cursor-not-allowed disabled:opacity-30
+                           disabled:hover:border-slate-700 disabled:hover:text-slate-400"
+                    ${canRemove ? '' : 'disabled'}>✕</button>
+          </div>
+          <input data-upi="${p.id}" type="text" value="${esc(p.upi)}"
+                 maxlength="40" autocomplete="off" spellcheck="false"
+                 placeholder="UPI ID (optional)"
+                 aria-label="UPI ID for ${esc(playerName(p))}"
+                 class="field-sm mt-1.5 text-[11px]" />
+        </div>`;
+    }).join('');
+
+    $('addPlayerBtn').disabled = act >= MAX_PLAYERS;
+    $('playerCount').textContent = act + '/' + MAX_PLAYERS;
+  }
+
+  /* =========================================================
+     RENDER — POT
+     ========================================================= */
+  function renderPot() {
+    const act = activePlayers().length;
+    const effAnte = Math.max(0, Math.floor(state.ante * state.multiplier));
+    const baseAntes = effAnte * act;
+    const total = state.pot + baseAntes;
+
+    animatePotValue(total);
+    $('roundValue').textContent = state.round;
+    $('anteValue').textContent  = fmt(state.ante);
+
+    if (act < MIN_PLAYERS) {
+      $('potSub').textContent = 'Add at least 2 active players to start.';
+    } else if (state.kittiMarks > 0) {
+      $('potSub').textContent =
+        `${fmt(baseAntes)} base + ${fmt(state.pot)} Kitti (${state.kittiMarks} mark${state.kittiMarks === 1 ? '' : 's'})`;
+    } else {
+      $('potSub').textContent = `${fmt(baseAntes)} base antes · no Kitti marks yet`;
+    }
+  }
+
+  function renderSparkline() {
+    const svg = $('sparkline');
+    const chron = [...state.history].reverse();
+    let series = [0, ...chron.map((h) => Number(h.amount) || 0)];
+    if (series.length < 2) series = [0, 0];
+
+    const W = 300, H = 56, PAD = 4;
+    const max = Math.max(...series, 1);
+    const stepX = (W - PAD * 2) / (series.length - 1);
+
+    const pts = series.map((v, i) => {
+      const x = PAD + i * stepX;
+      const y = H - PAD - (v / max) * (H - PAD * 2);
+      return [x, y];
+    });
+    const line = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+    const area = line + ` L${(W - PAD).toFixed(1)} ${H} L${PAD} ${H} Z`;
+    const [lx, ly] = pts[pts.length - 1];
+
+    svg.innerHTML = `
+      <defs>
+        <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="#34d399" stop-opacity="0.32"/>
+          <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="${area}" fill="url(#sparkFill)"/>
+      <path d="${line}" fill="none" stroke="#34d399" stroke-width="2"
+            stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+      <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3" fill="#34d399"/>
+    `;
+  }
+
+  /* =========================================================
+     RENDER — MULTIPLIER
+     ========================================================= */
+  function renderMultiplier() {
+    const wrap = $('multGroup');
+    wrap.innerHTML = '';
+    [1, 2, 3].forEach((m) => {
+      const active = state.multiplier === m;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.mult = m;
+      b.textContent = m + '×';
+      b.setAttribute('aria-pressed', active ? 'true' : 'false');
+      b.className =
+        'min-w-[2.5rem] rounded-lg px-2 py-1.5 text-xs font-bold transition ' +
+        (active
+          ? 'bg-emerald-500 text-slate-950 shadow'
+          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200');
+      wrap.appendChild(b);
+    });
+    const eff = Math.max(0, Math.floor(state.ante * state.multiplier));
+    const act = activePlayers().length;
+    $('multHint').textContent = `${fmt(eff)} each · ${fmt(eff * act)} base`;
+  }
+
+  /* =========================================================
+     RENDER — WINNER OPTIONS
+     ========================================================= */
+  function renderWinnerOptions() {
+    const wrap = $('winnerOptions');
+    wrap.innerHTML = '';
+    activePlayers().forEach((p) => {
+      const active = state.selection === p.id;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.value = p.id;
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      btn.className =
+        'flex min-h-[3rem] items-center justify-center rounded-xl border px-3 py-3 ' +
+        'text-center text-sm font-semibold leading-tight break-words transition ' +
+        (active
+          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300 ring-2 ring-emerald-500/30'
+          : 'border-slate-700 bg-slate-800/50 text-slate-300 hover:border-slate-600 hover:bg-slate-800');
+      btn.textContent = playerName(p);
+      wrap.appendChild(btn);
+    });
+  }
+
+  /* =========================================================
+     RENDER — KITTI SECTION
+     ========================================================= */
+  function renderKittiSection() {
+    const act = activePlayers().length;
+    const effAnte = Math.max(0, Math.floor(state.ante * state.multiplier));
+    const perMark = effAnte * act;
+
+    $('kittiCount').textContent = state.kittiMarks;
+    $('kittiAmount').textContent = state.kittiMarks > 0
+      ? `${fmt(state.pot)} in pot from Kitti · ${state.kittiMarks} mark${state.kittiMarks === 1 ? '' : 's'} × ${fmt(perMark)}`
+      : 'No Kitti marks yet — marking adds one more ante from every player';
+    $('kittiBtnAmt').textContent = act >= MIN_PLAYERS && effAnte > 0
+      ? `(+${fmt(perMark)})`
+      : '';
+    $('markKittiBtn').disabled = act < MIN_PLAYERS || effAnte <= 0;
+  }
+
+  /* =========================================================
+     RENDER — PREVIEW
+     ========================================================= */
+  function renderPreview() {
+    const el = $('roundPreview');
+    const act = activePlayers();
+    const effAnte = Math.max(0, Math.floor(state.ante * state.multiplier));
+    const baseAntes = effAnte * act.length;
+    const total = state.pot + baseAntes;
+
+    if (act.length < MIN_PLAYERS) {
+      el.innerHTML = '<span class="text-rose-400">Add at least 2 active players to play a round.</span>';
+      return;
+    }
+    if (effAnte <= 0) {
+      el.innerHTML = '<span class="text-rose-400">Set an ante greater than 0.</span>';
+      return;
+    }
+    if (state.selection === null) {
+      el.innerHTML =
+        `Select a winner. Pot at stake: <span class="font-semibold text-emerald-400">${fmt(total)}</span>`;
+      return;
+    }
+    const p = state.players.find((x) => x.id === state.selection && !x.left);
+    if (!p) {
+      el.innerHTML = '<span class="text-rose-400">Winner is no longer active.</span>';
+      return;
+    }
+    const breakdown = state.kittiMarks > 0
+      ? ` <span class="text-slate-600">(${fmt(baseAntes)} base + ${fmt(state.pot)} Kitti)</span>`
+      : ` <span class="text-slate-600">(${fmt(baseAntes)} base)</span>`;
+    el.innerHTML =
+      `<span class="font-semibold text-slate-300">${esc(playerName(p))}</span> takes ` +
+      `<span class="font-semibold text-emerald-400">${fmt(total)}</span>${breakdown}`;
+  }
+
+  /* =========================================================
+     RENDER — LEADERBOARD
+     ========================================================= */
+  function renderLeaderboard() {
+    const body = $('leaderboardBody');
+    if (!state.players.length) {
+      body.innerHTML =
+        '<tr><td colspan="6" class="py-6 text-center text-sm text-slate-500">No players yet.</td></tr>';
+      return;
+    }
+
+    const rows = state.players
+      .map((p) => ({ ...p, balance: p.won - p.staked }))
+      .sort((a, b) =>
+        (b.wins - a.wins) ||
+        (b.balance - a.balance) ||
+        (a.left ? 1 : 0) - (b.left ? 1 : 0)
+      );
+
+    body.innerHTML = rows.map((p, i) => {
+      const bal = p.balance;
+      const balClass = bal > 0.5 ? 'text-emerald-400'
+                     : bal < -0.5 ? 'text-rose-400'
+                     : 'text-slate-400';
+      const initial = (p.name.trim().charAt(0) || '?').toUpperCase();
+      const leftTag = p.left
+        ? '<span class="ml-1.5 rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-bold tracking-widest text-slate-500">LEFT</span>'
+        : '';
+
+      return `
+        <tr class="border-t border-slate-800/80 transition hover:bg-slate-800/30 ${p.left ? 'opacity-55' : ''}">
+          <td class="py-3 text-center text-xs font-bold text-slate-500">${i + 1}</td>
+          <td class="py-3 pl-1">
+            <div class="flex min-w-0 items-center gap-2">
+              <span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-slate-700/70 text-[11px] font-bold text-slate-300">${esc(initial)}</span>
+              <span class="truncate font-semibold">${esc(playerName(p))}${leftTag}</span>
+            </div>
+          </td>
+          <td class="py-3 text-center font-semibold tabular-nums">${p.wins}</td>
+          <td class="hidden py-3 text-right text-sm tabular-nums text-slate-400 sm:table-cell">${fmt(p.staked)}</td>
+          <td class="hidden py-3 pl-3 text-right text-sm tabular-nums text-emerald-500/80 sm:table-cell">${fmt(p.won)}</td>
+          <td class="py-3 pl-3 text-right font-bold tabular-nums ${balClass}">${fmtSigned(bal)}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  /* =========================================================
+     RENDER — SETTLEMENT (PAIRWISE NETTING)
+     ========================================================= */
+  function getSettlementTransfers() {
+    // 1. Build a matrix of who owes whom based on past rounds
+    const net = {};
+    state.players.forEach(p => { net[p.id] = {}; });
+
+    state.transactions.forEach(t => {
+      if (!net[t.from][t.to]) net[t.from][t.to] = 0;
+      net[t.from][t.to] += t.amount;
+    });
+
+    // 2. Net them out pairwise
+    const transfers = [];
+    for (let i = 0; i < state.players.length; i++) {
+      for (let j = i + 1; j < state.players.length; j++) {
+        const p1 = state.players[i];
+        const p2 = state.players[j];
+        
+        const p1OwesP2 = net[p1.id][p2.id] || 0;
+        const p2OwesP1 = net[p2.id][p1.id] || 0;
+        
+        const diff = p1OwesP2 - p2OwesP1;
+        
+        if (diff > 0.5) {
+          transfers.push({ from: p1, to: p2, amount: diff });
+        } else if (diff < -0.5) {
+          transfers.push({ from: p2, to: p1, amount: -diff });
+        }
+      }
+    }
+    return transfers;
+  }
+
+  function upiHref(player, amount) {
+    if (!player.upi) return '';
+    const q = new URLSearchParams({
+      pa: player.upi,
+      pn: player.name,
+      am: String(Math.round(amount)),
+      cu: 'INR',
+      tn: 'Kitti settlement'
+    });
+    return 'upi://pay?' + q.toString();
+  }
+
+  function renderSettlement() {
+    const transfers = getSettlementTransfers();
+
+    $('settleList').innerHTML = transfers.length
+      ? transfers.map((t) => {
+          const href = upiHref(t.to, t.amount);
+          const amountHtml = href
+            ? `<a href="${esc(href)}"
+                  class="ml-auto inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-2.5 py-1
+                         font-bold tabular-nums text-emerald-300 underline decoration-emerald-500/40
+                         underline-offset-2 transition hover:bg-emerald-500/25">
+                 ${fmt(t.amount)} <span class="text-[10px]">UPI</span>
+               </a>`
+            : `<span class="ml-auto font-bold tabular-nums text-slate-100">${fmt(t.amount)}</span>`;
+          return `
+            <li class="pop-in flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-slate-800
+                       bg-slate-950/50 px-3 py-2.5 text-sm">
+              <span class="font-semibold text-rose-300">${esc(t.from.name)}</span>
+              <span class="text-slate-500">owes</span>
+              <span class="font-semibold text-emerald-300">${esc(t.to.name)}</span>
+              ${amountHtml}
+            </li>`;
+        }).join('')
+      : `<li class="rounded-xl border border-dashed border-slate-800 px-3 py-6 text-center text-sm text-slate-500">
+           Everyone is square. 🎉
+         </li>`;
+  }
+
+  /* =========================================================
+     RENDER — STATS
+     ========================================================= */
+  function renderStats() {
+    const wins = state.history.filter((h) => h.type === 'win');
+    const biggestWin = wins.reduce((m, h) => Math.max(m, Number(h.amount) || 0), 0);
+    const totalKittiMarks = state.history.reduce((s, h) => s + (Number(h.kittiMarks) || 0), 0);
+    const totalKittiPaid  = state.history.reduce((s, h) => s + (Number(h.kittiAmount) || 0), 0);
+
+    const tiles = [
+      { label: 'Rounds',       value: String(state.round),       accent: 'text-slate-200' },
+      { label: 'Biggest pot',  value: fmt(biggestWin),           accent: 'text-emerald-400' },
+      { label: 'Kitti marks',  value: String(totalKittiMarks),   accent: 'text-amber-400' },
+      { label: 'Kitti money',  value: fmt(totalKittiPaid),       accent: 'text-amber-300' }
+    ];
+
+    $('statsGrid').innerHTML = tiles.map((t) => `
+      <div class="rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2.5">
+        <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">${t.label}</p>
+        <p class="mt-0.5 truncate text-lg font-bold tabular-nums ${t.accent}">${esc(t.value)}</p>
+      </div>`).join('');
+  }
+
+  /* =========================================================
+     RENDER — HISTORY
+     ========================================================= */
+  function renderHistory() {
+    const list = $('historyList');
+    if (!state.history.length) {
+      list.innerHTML = `
+        <li class="rounded-xl border border-dashed border-slate-800 px-4 py-8 text-center text-sm text-slate-500">
+          No rounds played yet. Mark Kitti if anyone declares it, then pick a winner and hit
+          <span class="font-semibold text-slate-300">Resolve Round</span>.
+        </li>`;
+      return;
+    }
+
+    list.innerHTML = state.history.map((h) => {
+      const mult = Number(h.multiplier) > 1
+        ? `<span class="ml-1 rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-bold text-slate-400">${h.multiplier}×</span>`
+        : '';
+      const kittiTag = Number(h.kittiMarks) > 0
+        ? `<span class="ml-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">${h.kittiMarks} Kitti</span>`
+        : '';
+      const breakdown = Number(h.kittiMarks) > 0
+        ? `${fmt(h.baseAntes)} base + ${fmt(h.kittiAmount)} Kitti`
+        : `${fmt(h.baseAntes)} base antes`;
+
+      return `
+        <li class="pop-in flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
+          <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-emerald-500/15 text-sm" aria-hidden="true">🏆</span>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-semibold text-emerald-300">Round ${h.round} — ${esc(h.player)} won ${mult}${kittiTag}</p>
+            <p class="text-xs text-emerald-200/60">Took ${fmt(h.amount)} · ${breakdown}</p>
+          </div>
+        </li>`;
+    }).join('');
+  }
+
+  /* =========================================================
+     MASTER RENDER
+     ========================================================= */
+  function render() {
+    renderPot();
+    renderSparkline();
+    renderMultiplier();
+    renderWinnerOptions();
+    renderKittiSection();
+    renderPreview();
+    renderLeaderboard();
+    renderSettlement();
+    renderStats();
+    renderHistory();
+    save();
+  }
+
+  /* =========================================================
+     ACTIONS
+     ========================================================= */
+  function markKitti() {
+    const act = activePlayers();
+    if (act.length < MIN_PLAYERS) return toast('You need at least ' + MIN_PLAYERS + ' active players.', 'error');
+
+    const effAnte = Math.max(0, Math.floor(state.ante * state.multiplier));
+    if (effAnte <= 0) return toast('Set an ante greater than 0.', 'error');
+
+    pushUndo('Kitti mark (round ' + (state.round + 1) + ')');
+
+    const amount = effAnte * act.length;
+    
+    // FIX: Add to each player's staked amount as well
+    act.forEach((p) => { p.staked += effAnte; });
+    
+    state.pot += amount;
+    state.kittiMarks += 1;
+
+    toast('Kitti! +' + fmt(amount) + ' to the pot.', 'info');
+
+    const btn = $('markKittiBtn');
+    btn.classList.remove('kitti-ping');
+    void btn.offsetWidth;   // restart the animation
+    btn.classList.add('kitti-ping');
+
+    render();
+  }
+
+  function playRound() {
+    const act = activePlayers();
+
+    if (act.length < MIN_PLAYERS) {
+      return toast('You need at least ' + MIN_PLAYERS + ' active players.', 'error');
+    }
+    const effAnte = Math.max(0, Math.floor(state.ante * state.multiplier));
+    if (effAnte <= 0) return toast('Set an ante greater than 0.', 'error');
+    if (state.selection === null) return toast('Select a winner first.', 'error');
+
+    const winner = state.players.find((p) => p.id === state.selection && !p.left);
+    if (!winner) {
+      state.selection = null;
+      render();
+      return toast('That player is no longer active.', 'error');
+    }
+
+    pushUndo(playerName(winner) + ' wins round ' + (state.round + 1));
+
+    // 1. Collect base antes from every active player
+    act.forEach((p) => { p.staked += effAnte; });
+    const baseAntes = effAnte * act.length;
+
+    // 2. The pot = Kitti contributions (already added) + base antes
+    const kittiAmount = state.pot;
+    const totalPot = state.pot + baseAntes;
+
+    // 3. Award to winner
+    winner.wins += 1;
+    winner.won  += totalPot;
+
+    // 4. Record transactions (Who owes whom)
+    const perPlayerCost = totalPot / act.length; // This is exactly effAnte * (1 + kittiMarks)
+    act.forEach((p) => {
+      if (p.id !== winner.id) {
+        state.transactions.push({
+          from: p.id,
+          to: winner.id,
+          amount: perPlayerCost
+        });
+      }
+    });
+
+    // 5. Record history
+    state.history.unshift({
+      round: state.round + 1,
+      type: 'win',
+      player: playerName(winner),
+      amount: totalPot,
+      baseAntes,
+      kittiAmount,
+      kittiMarks: state.kittiMarks,
+      multiplier: state.multiplier
+    });
+
+    // 6. Reset round-scoped state
+    state.round += 1;
+    state.pot = 0;
+    state.kittiMarks = 0;
+    state.selection = null;
+
+    confettiBurst();
+    toast(playerName(winner) + ' wins ' + fmt(totalPot) + '!', 'success');
+    render();
+  }
+
+  /* =========================================================
+     EXPORT — SHARE + CSV
+     ========================================================= */
+  function buildSummary() {
+    const lines = [];
+    lines.push('🃏 KITTI — ' + state.round + ' round' + (state.round === 1 ? '' : 's'));
+    lines.push('');
+    lines.push('LEADERBOARD');
+
+    state.players
+      .map((p) => ({ ...p, bal: p.won - p.staked }))
+      .sort((a, b) => (b.wins - a.wins) || (b.bal - a.bal))
+      .forEach((p, i) => {
+        lines.push(
+          `${i + 1}. ${playerName(p)} — ${p.wins} win${p.wins === 1 ? '' : 's'} — ` +
+          `${fmtSigned(p.bal)}${p.left ? ' (left)' : ''}`
+        );
+      });
+
+    if (state.pot > 0) {
+      lines.push('');
+      lines.push(`KITTI POT: ${fmt(state.pot)} (${state.kittiMarks} mark${state.kittiMarks === 1 ? '' : 's'})`);
+    }
+
+    const transfers = getSettlementTransfers();
+
+    lines.push('');
+    lines.push('SETTLEMENT');
+    if (!transfers.length) lines.push('Everyone is square 🎉');
+    else transfers.forEach((t) => lines.push(`${t.from.name} owes ${t.to.name}: ${fmt(t.amount)}`));
+
+    return lines.join('\n');
+  }
+
+  async function shareSummary() {
+    const text = buildSummary();
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Kitti Score', text });
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('Summary copied to clipboard.', 'success');
+    } catch (e) {
+      toast('Could not copy — try the CSV export.', 'error');
+    }
+  }
+
+  function exportCSV() {
+    const rows = [[
+      'Round', 'Winner', 'Total Won',
+      'Base Antes', 'Kitti Marks', 'Kitti Amount',
+      'Multiplier'
+    ]];
+    [...state.history].reverse().forEach((h) => {
+      rows.push([
+        h.round,
+        h.player || '',
+        round0(h.amount),
+        round0(h.baseAntes),
+        round0(h.kittiMarks),
+        round0(h.kittiAmount),
+        h.multiplier
+      ]);
+    });
+
+    const csv = rows
+      .map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = 'kitti-history.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    toast('CSV downloaded.', 'success');
+  }
+
+  /* =========================================================
+     EVENT WIRING
+     ========================================================= */
+
+  /* ---- player name + UPI input ---- */
+  $('playerList').addEventListener('input', (e) => {
+    const nameInput = e.target.closest('input[data-name]');
+    if (nameInput) {
+      const p = state.players.find((x) => x.id === Number(nameInput.dataset.name));
+      if (p) { p.name = nameInput.value; render(); }
+      return;
+    }
+    const upiInput = e.target.closest('input[data-upi]');
+    if (upiInput) {
+      const p = state.players.find((x) => x.id === Number(upiInput.dataset.upi));
+      if (p) { p.upi = upiInput.value; render(); }
+    }
+  });
+
+  /* ---- remove / cash out ---- */
+  $('playerList').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-remove]');
+    if (!btn) return;
+    if (activePlayers().length <= MIN_PLAYERS) return;
+
+    const id = Number(btn.dataset.remove);
+    const p = state.players.find((x) => x.id === id);
+    if (!p) return;
+
+    pushUndo('Remove ' + playerName(p));
+
+    if (p.staked === 0 && p.won === 0) {
+      state.players = state.players.filter((x) => x.id !== id);
+      toast('Player removed.', 'info');
+    } else {
+      p.left = true;
+      toast(playerName(p) + ' cashed out — balance kept for settlement.', 'info');
+    }
+    if (state.selection === id) state.selection = null;
+
+    renderPlayers();
+    render();
+  });
+
+  /* ---- add player ---- */
+  $('addPlayerBtn').addEventListener('click', () => {
+    if (activePlayers().length >= MAX_PLAYERS) return;
+    const used = new Set(state.players.map((p) => p.name.trim().toLowerCase()));
+    let n = 1;
+    while (used.has('player ' + n)) n += 1;
+    state.players.push(makePlayer('Player ' + n));
+    renderPlayers();
+    render();
+  });
+
+  /* ---- ante ---- */
+  $('anteInput').addEventListener('input', (e) => {
+    state.ante = Math.max(0, Math.floor(Number(e.target.value) || 0));
+    render();
+  });
+
+  /* ---- multiplier ---- */
+  $('multGroup').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-mult]');
+    if (!btn) return;
+    state.multiplier = Number(btn.dataset.mult) || 1;
+    render();
+  });
+
+  /* ---- winner selection ---- */
+  $('winnerOptions').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-value]');
+    if (!btn) return;
+    state.selection = Number(btn.dataset.value);
+    render();
+  });
+
+  /* ---- resolve / kitti / undo / share / csv / reset ---- */
+  $('playRoundBtn').addEventListener('click', playRound);
+  $('markKittiBtn').addEventListener('click', markKitti);
+  $('undoBtn').addEventListener('click', doUndo);
+  $('shareBtn').addEventListener('click', shareSummary);
+  $('csvBtn').addEventListener('click', exportCSV);
+
+  $('resetBtn').addEventListener('click', () => {
+    if (!window.confirm(
+      'Reset the game?\n\nAll scores, balances, history, the pot and any Kitti marks\n' +
+      'will be cleared, and the roster returns to 2 players.'
+    )) return;
+
+    state = freshState();
+    undoStack = [];
+    syncUndoBtn();
+    shownPot = null;
+    $('anteInput').value = state.ante;
+
+    renderPlayers();
+    render();
+    toast('Game reset — ready for a new match.', 'info');
+  });
+
+  /* ---- keyboard shortcuts ---- */
+  document.addEventListener('keydown', (e) => {
+    const t = e.target;
+    const typing = t && (
+      t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
+      t.tagName === 'SELECT' || t.isContentEditable
+    );
+
+    if (typing) {
+      if (e.key === 'Enter' && t.id === 'anteInput') {
+        e.preventDefault();
+        t.blur();
+      }
+      return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      doUndo();
+      return;
+    }
+    if (e.key === 'Enter') { e.preventDefault(); playRound(); return; }
+    if (e.key.toLowerCase() === 'k') { e.preventDefault(); markKitti(); return; }
+
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= MAX_PLAYERS) {
+      const p = activePlayers()[n - 1];
+      if (p) { state.selection = p.id; render(); }
+    }
+  });
+
+  /* =========================================================
+     INIT
+     ========================================================= */
+  const loaded = loadState();
+  state = loaded || freshState();
+  $('anteInput').value = state.ante;
+  syncUndoBtn();
+  renderPlayers();
+  render();
+})();
+</script>
+</body>
+</html>
